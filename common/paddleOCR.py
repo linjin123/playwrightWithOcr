@@ -42,13 +42,13 @@ class paddleOCR:
                 return (cx, cy)
         return None
 
-    def find_img_center(self,img, template_path=TEMPLATE_PATH, method=cv2.TM_CCOEFF_NORMED, threshold=0.8, debug=True):
+    def find_img_center(self,img, template, method=cv2.TM_CCOEFF_NORMED, threshold=0.8, debug=True):
         # 3. 截图并让模型预测
         boxes = []
         # 4. 遍历所有检测到的图标
         # img = cv2.imread(img)
-        print(f"路径: {template_path}")
-        template = cv2.imread(template_path)  # 小图（图标）
+        # print(f"路径: {template_path}")
+        # template = cv2.imread(template_path)  # 小图（图标）
         if img is None or template is None:
             print("图片读取失败，请检查路径")
             return

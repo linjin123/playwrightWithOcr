@@ -5,6 +5,7 @@ from common.paddleOCR import paddleOCR
 import json
 import hashlib
 from config.config import *
+import pickle
 
 
 class BasePage:
@@ -41,6 +42,30 @@ class BasePage:
             return True
         else:
             raise Exception(f"未通过 OCR 找到文本: {text}")
+    def click_by_icon(self, text, timeout=10, wait_before=0.5):
+        """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）"""
+        # 等待页面稳定
+        self.page.wait_for_load_state('networkidle')
+        time.sleep(wait_before)
+        # 截图
+
+        screenshot_bytes = self.page.screenshot(full_page=False)
+        # 转为 PIL Image
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(screenshot_bytes))
+        image = self.get_icon_boxes_with_cache(text)
+        center = self.ocr.find_img_center(img,image)
+        if center:
+            x, y = center
+            # 点击坐标（注意视口偏移）
+            self.page.mouse.click(x, y)
+            self._save_step_screenshot(f"click_{text}")
+            return True
+        else:
+            raise Exception(f"未通过 OCR 找到icon: {text}")
+
+
 
     def click_by_coordinate(self, x, y):
         self.page.mouse.click(x, y)
@@ -88,9 +113,16 @@ class BasePage:
                     print(f"缓存反序列化失败: {e}")
 
         # 执行 OCR
-        raw_result = self.ocr.get_text_boxes(img)  # 假设返回原始格式
-        # 序列化
-        serialized = self.orc.serialize_ocr_boxes(raw_result)
-        # 存入 Redis
-        self.redis.setex(cache_key, self.cache_ttl, json.dumps(serialized))
-        return serialized
+        raw_result = self.ocr.get_text_boxes(img)  # 返回
+        # # 序列化
+        # serialized = self.orc.serialize_ocr_boxes(img)
+        # 序列化存入 Redis
+        self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
+        return raw_result
+
+    def get_icon_boxes_with_cache(self,text):
+        # 读取 bytes
+        template_bytes = self.redis.get(text)
+        # 反序列化为 numpy 数组
+        template = pickle.loads(template_bytes)
+        return template

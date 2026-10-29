@@ -1,11 +1,15 @@
+import os
 import time
 from pathlib import Path
 from playwright.sync_api import Page, expect
 from common.paddleOCR import paddleOCR
 import json
 import hashlib
-from config.config import *
+from config import config
 import pickle
+import cv2
+import numpy as np
+from PIL import Image
 
 
 class BasePage:
@@ -14,10 +18,11 @@ class BasePage:
         self.ocr = paddleOCR()
         self.screenshot_dir = Path("screenshots")
         self.screenshot_dir.mkdir(exist_ok=True)
-        self.redis = redis()
+        self.redis = config.redis
+        # self.url = config.URL
         self.cache_ttl = cache_ttl
 
-    def navigate(self, url):
+    def navigate(self,url):
         self.page.goto(url)
 
     def click_by_text(self, text, timeout=10, wait_before=0.5):
@@ -32,7 +37,13 @@ class BasePage:
         from PIL import Image
         import io
         img = Image.open(io.BytesIO(screenshot_bytes))
-        boxes = self.get_ocr_boxes_with_cache(img,text, force_refresh=False)
+        img_bgr = cv2.imdecode(np.frombuffer(screenshot_bytes, np.uint8), cv2.IMREAD_COLOR)
+
+        boxes = self._get_ocr_boxes_with_cache(img,text, force_refresh=True)
+
+        #在获取的文本内容画提取框，调试获取的文本
+        self.screenshot(boxes,img_bgr,config.SCREENSHOTS_PATH)
+
         center = self.ocr.find_text_center(boxes, text)
         if center:
             x, y = center
@@ -42,6 +53,45 @@ class BasePage:
             return True
         else:
             raise Exception(f"未通过 OCR 找到文本: {text}")
+
+    def screenshot(self,boxes,img,output_dir="output"):
+        if img is None:
+            raise FileNotFoundError(f"图片numpy读取失败")
+
+        h, w = img.shape[:2]
+        # annotated = img.copy()
+        for i, item in enumerate(boxes):
+            x1, y1, x2, y2 = item["box"]
+            # 边界保护，防止越界
+            x1 = max(0, min(int(x1), w - 1))
+            y1 = max(0, min(int(y1), h - 1))
+            x2 = max(0, min(int(x2), w))
+            y2 = max(0, min(int(y2), h))
+            if x2 <= x1 or y2 <= y1 or len(item["text"]) >= 10:
+                continue
+
+
+
+            # 1. 在整图上画框
+            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+            # 2. 裁剪并保存
+            # crop = img[y1:y2, x1:x2]
+            text = item["text"].replace("/", "_").replace("\\", "_")
+            cv2.putText(img, text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1)
+            # 文件名去掉非法字符，只保留前 30 字符
+            # safe_text = "".join(c for c in text if c.isalnum() or c in "._- ")[:30]
+            # crop_name = f"{i:03d}_{text}.png"
+            # cv2.imwrite(os.path.join(output_dir, crop_name), crop)
+
+            # 3. 在整图上标注文本（可选，中文需额外处理）
+            # cv2.putText 不支持中文，见文末说明
+
+            # 保存带框的整图
+        annotated_path = os.path.join(output_dir, "annotated.png")
+        cv2.imwrite(annotated_path, img)
+        print(f"带框整图已保存: {annotated_path}")
+        print(f"共裁剪 {len(boxes)} 个文本区域到: {output_dir}/")
     def click_by_icon(self, text, timeout=10, wait_before=0.5):
         """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）"""
         # 等待页面稳定
@@ -54,7 +104,7 @@ class BasePage:
         from PIL import Image
         import io
         img = Image.open(io.BytesIO(screenshot_bytes))
-        image = self.get_icon_boxes_with_cache(text)
+        image = self._get_icon_boxes_with_cache(text)
         center = self.ocr.find_img_center(img,image)
         if center:
             x, y = center
@@ -88,7 +138,7 @@ class BasePage:
         # 简单使用 URL 的 MD5 作为键（避免过长）
         return f"ocr_cache:{hashlib.md5(url.encode()).hexdigest()}"
 
-    def get_ocr_boxes_with_cache(self,img,text, force_refresh=False):
+    def _get_ocr_boxes_with_cache(self,img,text, force_refresh=False):
         """
         获取 OCR 结果，优先从 Redis 读取，若不存在则执行 OCR 并缓存。
         """
@@ -120,7 +170,7 @@ class BasePage:
         self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
         return raw_result
 
-    def get_icon_boxes_with_cache(self,text):
+    def _get_icon_boxes_with_cache(self,text):
         # 读取 bytes
         template_bytes = self.redis.get(text)
         # 反序列化为 numpy 数组

@@ -5,7 +5,7 @@ import pytest
 from playwright.sync_api import sync_playwright
 import glob
 
-import config.config
+from config import config
 
 
 @pytest.fixture(scope="session")
@@ -16,7 +16,7 @@ def playwright():
 @pytest.fixture(scope="function")
 def browser(playwright):
     # 启动浏览器（可选择 headless=False 方便调试）
-    browser = playwright.chromium.launch(headless=True)
+    browser = playwright.chromium.launch(headless=False)
     yield browser
     browser.close()
 
@@ -28,7 +28,7 @@ def page(browser):
     context.close()
 
 @pytest.fixture(scope="session")
-def initialize_icon(self,folder_path, extensions=('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
+def initialize_icon(folder_path, extensions=('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
     for filename in os.listdir(folder_path):
         if filename.lower().endswith(extensions):
             img_path = os.path.join(folder_path, filename)
@@ -39,4 +39,4 @@ def initialize_icon(self,folder_path, extensions=('.png', '.jpg', '.jpeg', '.bmp
             template_bytes = pickle.dumps(template)
 
              # 存入 Redis，key 为图标名（如 'icon_login'）
-            self.redis.set(filename, template_bytes)
+            config.redis.set(filename, template_bytes)

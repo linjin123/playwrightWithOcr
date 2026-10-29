@@ -2,8 +2,9 @@
 # 数据库配置
 import os
 import redis
+from redis.cluster import RedisCluster, ClusterNode
 
-URL = "https://example.com/login"  # 替换为实际地址
+URL = "https://tieba.baidu.com/"  # 替换为实际地址
 DATABASE_URL = "sqlite:///app.db"
 # API密钥
 API_KEY = "your-api-key"
@@ -13,21 +14,22 @@ DEBUG = True
 script_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(script_dir)
 TEMPLATE_PATH = os.path.join(root_dir, "modelPage","fujian.png")
-def redis():
-
-
-    # 默认连接本地 Redis（host=localhost, port=6379, db=0）
-    r = redis.Redis()
-
-    # 带密码和远程地址
-    r = redis.Redis(
-        host='127.0.0.1',
-        port=6379,
-        password='your_password',
-        db=0,
-        decode_responses=True  # 自动将返回的 bytes 转为 str
-    )
-    return r
+SCREENSHOTS_PATH = os.path.join(root_dir, "test","screenshots")
+#redis单例
+# redis = redis.Redis(
+#     host="localhost",
+#     port=6379,
+#     db=0,
+#     decode_responses=True,
+#     max_connections=20,      # 连接池上限
+# )
+#redis集群
+nodes = [
+    ClusterNode('172.23.1.152', 7001),
+    ClusterNode('172.23.1.153', 7001),
+    ClusterNode('172.23.1.154', 7001),
+]
+redis = RedisCluster(startup_nodes=nodes, decode_responses=True,password="unipower123")
 
 if __name__ == "__main__":
     print(f"路径1: %d",root_dir)

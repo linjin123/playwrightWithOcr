@@ -136,5 +136,7 @@ class paddleOCR:
                 'confidence': confidence
             })
         return serializable
+
+
 if __name__ == '__main__':
     paddleOCR().get_text_boxes()

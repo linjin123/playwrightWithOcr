@@ -22,7 +22,7 @@ def browser(playwright):
 
 @pytest.fixture(scope="function")
 def page(browser):
-    context = browser.new_context(viewport={"width": 1920, "height": 1080})
+    context = browser.new_context(viewport={"width": 1920, "height": 1080},device_scale_factor=1)
     page = context.new_page()
     yield page
     context.close()

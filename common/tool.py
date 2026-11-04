@@ -30,6 +30,8 @@ class Tools:
     :param describe:  True 返回元素描述列表；False 只返回采样点数量
     :return:          元素描述列表（可序列化）或采样点数量
     """
+    # 等待整个页面（包括图片、样式表等所有资源）加载完毕
+    page.wait_for_load_state(state='load')
     page.evaluate(
       _JS_CAPTURE_BASELINE,
       {"G": grid, "varName": var_name},
@@ -97,7 +99,7 @@ class Tools:
         const isModal = !!(mask || dialog);
 
         // ---- 5. 输出 ----
-        # console.log(`变化率 ${changed.length}/${k} = ${(ratio * 100).toFixed(1)}%`);
+        // console.log(`变化率 ${changed.length}/${k} = ${(ratio * 100).toFixed(1)}%`);
         console.table(candidates.slice(0, 8).map(c => ({
           el: (c.el.className || c.el.tagName).toString().slice(0, 45),
           hits: c.n,
@@ -110,14 +112,22 @@ class Tools:
         console.log('dialog:', dialog);
         console.log('isModal:', isModal);
 
-        # window.__diff2 = { changed, candidates, mask, dialog, ratio, isModal };
+        //window.__diff2 = { changed, candidates, mask, dialog, ratio, isModal };
 
-        return dialog;
+        if (!dialog) return null;
+        return {
+            class: dialog.class,
+            text: (dialog.innerText || '').trim().slice(0, 50), // 截取前50个字符
+            html: dialog.outerHTML.slice(0, 200) // 截取前200个字符方便查看
+        };
         
       }
       """
+    # 等待整个页面（包括图片、样式表等所有资源）加载完毕
+    page.wait_for_load_state(state='load')
+    print(f"dialog div:{str(page.evaluate(_JS_DIFF, {'G': grid, 'baseVar': var_name}))}")
     return page.evaluate(_JS_DIFF, {"G": grid, "baseVar": var_name})
-    print(f"dialog div:{str(page.evaluate(_JS_DIFF, {"G": grid, "baseVar": var_name}))}")
+
 
 # if __name__ == "__main__":
 #   with sync_playwright() as p:

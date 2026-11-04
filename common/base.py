@@ -27,8 +27,10 @@ class BasePage:
 
     def click_by_text(self, text, timeout=10, wait_before=0.5):
         """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）"""
-        # 等待页面稳定
-        self.page.wait_for_load_state('networkidle')
+        # 等待页面稳定，networkidle 要求至少 500 毫秒内没有任何网络连接
+        # self.page.wait_for_load_state('networkidle')
+        # 等待整个页面（包括图片、样式表等所有资源）加载完毕
+        self.page.wait_for_load_state(state='load')
         time.sleep(wait_before)
         # 截图
 

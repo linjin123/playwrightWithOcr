@@ -10,7 +10,7 @@ import pickle
 import cv2
 import numpy as np
 from PIL import Image
-
+from tool import Tools
 
 class BasePage:
     def __init__(self, page: Page,redis_client=None, cache_ttl=3600):
@@ -25,7 +25,18 @@ class BasePage:
     def navigate(self,url):
         self.page.goto(url)
 
-    def click_by_text(self, text,popup_selector='', timeout=10, wait_before=0.5):
+    def click_by_text(page):
+        browser = BasePage(page)
+        state = {"container": None}  # 每次点击后更新，供下一次使用
+
+        def _click(text):
+            Tools.capture_baseline(page)  # 前
+            browser._click_by_text(text, state["container"])
+            state["container"] = Tools.diff_with_baseline(page)  # 后，结果留给下次
+
+        _click.reset = lambda: state.update(container=None)
+        return _click
+    def _click_by_text(self, text,popup_selector, timeout=10, wait_before=0.5):
         """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）,popup_selector为弹窗div属性"""
         # 等待页面稳定，networkidle 要求至少 500 毫秒内没有任何网络连接
         # self.page.wait_for_load_state('networkidle')
@@ -48,7 +59,7 @@ class BasePage:
             self._clickCenter(center, text)
             print("点击弹窗")
         #需要获取当前url
-        boxes = self._get_ocr_boxes_with_cache(img,text,popup_selector, force_refresh=False)
+        boxes = self._get_ocr_boxes_with_cache(img,popup_selector, force_refresh=False)
 
 
         #在获取的文本内容画提取框，调试获取的文本
@@ -136,7 +147,7 @@ class BasePage:
         # 简单使用 URL 的 MD5 作为键（避免过长）
         return f"ocr_cache:{hashlib.md5(url.encode()).hexdigest()}"
 
-    def _get_ocr_boxes_with_cache(self,img,text,popup_selector, force_refresh=False):
+    def _get_ocr_boxes_with_cache(self,img,popup_selector, force_refresh=False):
         """
         获取 OCR 结果，优先从 Redis 读取，若不存在则执行 OCR 并缓存。
         """

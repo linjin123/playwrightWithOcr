@@ -115,17 +115,17 @@ class Tools:
         //window.__diff2 = { changed, candidates, mask, dialog, ratio, isModal };
 
         if (!dialog) return null;
-        return {
-            class: dialog.class,
-            text: (dialog.innerText || '').trim().slice(0, 50), // 截取前50个字符
-            html: dialog.outerHTML.slice(0, 200) // 截取前200个字符方便查看
-        };
+        const uniqueId = 'pw-popup-' + Date.now();
+        dialog.setAttribute('data-pw-popup-id', uniqueId);
+        
+        // 返回一个标准的 CSS 选择器字符串
+        return `[data-pw-popup-id="${uniqueId}"]`;
         
       }
       """
     # 等待整个页面（包括图片、样式表等所有资源）加载完毕
     page.wait_for_load_state(state='load')
-    print(f"dialog div:{str(page.evaluate(_JS_DIFF, {'G': grid, 'baseVar': var_name}))}")
+    # print(f"dialog div:{str(page.evaluate(_JS_DIFF, {'G': grid, 'baseVar': var_name}))}")
     return page.evaluate(_JS_DIFF, {"G": grid, "baseVar": var_name})
 
 

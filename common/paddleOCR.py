@@ -15,11 +15,66 @@ class paddleOCR:
         text_det_box_thresh=0.7
         )
 
-    def get_text_boxes(self, image):
+    def get_text_boxes(self, image,popup_selector=''):
         """
         接收 PIL Image 或 numpy array（BGR），返回 OCR 结果列表：
         [ [ [x1,y1], [x2,y2], [x3,y3], [x4,y4] ], (text, confidence) ], ... ]
         """
+        if popup_selector:
+            popup = page.locator(popup_selector)
+            # 2. 获取弹窗的边界框 (CSS 像素)
+            box = popup.bounding_box()
+            if not box:
+                raise Exception("无法获取弹窗位置")
+            popup_x, popup_y = box["x"], box["y"]
+
+            # 3. 获取设备像素比 DPR
+            dpr = page.evaluate("window.devicePixelRatio")
+
+            # 4. 截取弹窗的图
+            screenshot_bytes = popup.screenshot()
+
+            # 5. 转为 OpenCV 图像
+            img = cv2.imdecode(np.frombuffer(screenshot_bytes, np.uint8), cv2.IMREAD_COLOR)
+
+            # 6. OCR 识别
+            ocr = PaddleOCR(use_textline_orientation=False, lang='ch', use_doc_unwarping=False,
+                            text_det_limit_side_len=99999)
+            result = ocr.predict(img)
+            res = result[0]
+            texts = res.get("rec_texts", [])
+            rects = res.get("rec_boxes", [])
+            scores = res.get("rec_scores", [])
+            # polys = res.get("dt_polys") or res.get("rec_polys", [])
+
+            texts_with_coords = []
+            for i, text in enumerate(texts):
+                score = float(scores[i]) if i < len(scores) else 0.0
+                if i >= len(rects): continue
+                x1,y1,x2,y2 = map(float, rects[i])
+
+                # points = polys[i]
+                # xs = [p[0] for p in points]
+                # ys = [p[1] for p in points]
+
+                # 这里的坐标是相对于截图的像素坐标
+                # 需要除以 DPR 转换回 CSS 像素
+                x1 = x1 / dpr
+                y1 = y1 / dpr
+                x2 = x2 / dpr
+                y2 = y2 / dpr
+
+                # 计算最终在视口中的坐标
+                final_x = popup_x + x1
+                final_y = popup_y + y1
+
+                boxes.append({
+                    "text": text,
+                    "box": (final_x, final_y, final_x + (x2 - x1), final_y + (y2 - y1)),  # 相对于视口的坐标
+                    "confidence": score  # 中心点
+                })
+
+            return boxes
         if isinstance(image, Image.Image):
             image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
         result = self.ocr.predict(image)

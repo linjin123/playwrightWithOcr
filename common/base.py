@@ -25,8 +25,8 @@ class BasePage:
     def navigate(self,url):
         self.page.goto(url)
 
-    def click_by_text(self, text, timeout=10, wait_before=0.5):
-        """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）"""
+    def click_by_text(self, text,popup_selector='', timeout=10, wait_before=0.5):
+        """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）,popup_selector为弹窗div属性"""
         # 等待页面稳定，networkidle 要求至少 500 毫秒内没有任何网络连接
         # self.page.wait_for_load_state('networkidle')
         # 等待整个页面（包括图片、样式表等所有资源）加载完毕
@@ -48,7 +48,7 @@ class BasePage:
             self._clickCenter(center, text)
             print("点击弹窗")
         #需要获取当前url
-        boxes = self._get_ocr_boxes_with_cache(img,text, force_refresh=False)
+        boxes = self._get_ocr_boxes_with_cache(img,text,popup_selector, force_refresh=False)
 
 
         #在获取的文本内容画提取框，调试获取的文本
@@ -136,7 +136,7 @@ class BasePage:
         # 简单使用 URL 的 MD5 作为键（避免过长）
         return f"ocr_cache:{hashlib.md5(url.encode()).hexdigest()}"
 
-    def _get_ocr_boxes_with_cache(self,img,text, force_refresh=False):
+    def _get_ocr_boxes_with_cache(self,img,text,popup_selector, force_refresh=False):
         """
         获取 OCR 结果，优先从 Redis 读取，若不存在则执行 OCR 并缓存。
         """
@@ -145,7 +145,10 @@ class BasePage:
             return self.ocr.get_text_boxes(img)
 
         url = self.page.url
-        cache_key = self._get_cache_key(url)
+        if popup_selector:
+            cache_key = popup_selector
+        else:
+            cache_key = self._get_cache_key(url)
 
         if not force_refresh:
             # 尝试从 Redis 获取
@@ -161,7 +164,7 @@ class BasePage:
                     print(f"缓存反序列化失败: {e}")
 
         # 执行 OCR
-        raw_result = self.ocr.get_text_boxes(img)  # 返回
+        raw_result = self.ocr.get_text_boxes(img,popup_selector)  # 返回
         # # 序列化
         # serialized = self.orc.serialize_ocr_boxes(img)
         # 序列化存入 Redis

@@ -8,6 +8,7 @@ from common.tool import Tools
 def test_dialog(page):
     browser = BasePage(page)
     browser.navigate("https://news.qq.com/")
-    Tools.capture_baseline(page)
+    # Tools.capture_baseline(page)
     browser.click_by_text("登录")
-    Tools.diff_with_baseline(page)
+    browser.click_by_text("QQ登录")
+    # Tools.diff_with_baseline(page)

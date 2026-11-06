@@ -16,20 +16,20 @@ root_dir = os.path.dirname(script_dir)
 TEMPLATE_PATH = os.path.join(root_dir, "modelPage","fujian.png")
 SCREENSHOTS_PATH = os.path.join(root_dir, "test","screenshots")
 #redis单例
-redis = redis.Redis(
-    host="localhost",
-    port=6379,
-    db=0,
-    decode_responses=True,
-    max_connections=20,      # 连接池上限
-)
+# redis = redis.Redis(
+#     host="localhost",
+#     port=6379,
+#     db=0,
+#     decode_responses=True,
+#     max_connections=20,      # 连接池上限
+# )
 #redis集群
-# nodes = [
-#     ClusterNode('172.23.1.152', 7001),
-#     ClusterNode('172.23.1.153', 7001),
-#     ClusterNode('172.23.1.154', 7001),
-# ]
-# redis = RedisCluster(startup_nodes=nodes, decode_responses=True,password="unipower123")
+nodes = [
+    ClusterNode('172.23.1.152', 7001),
+    ClusterNode('172.23.1.153', 7001),
+    ClusterNode('172.23.1.154', 7001),
+]
+redis = RedisCluster(startup_nodes=nodes, decode_responses=True,password="unipower123")
 
 if __name__ == "__main__":
     print(f"路径1: %d",root_dir)

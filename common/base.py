@@ -10,7 +10,7 @@ import pickle
 import cv2
 import numpy as np
 from PIL import Image
-from tool import Tools
+from common.tool import Tools
 
 class BasePage:
     def __init__(self, page: Page,redis_client=None, cache_ttl=3600):
@@ -21,22 +21,22 @@ class BasePage:
         self.redis = config.redis
         # self.url = config.URL
         self.cache_ttl = cache_ttl
+        self.state = {"container": None}
 
     def navigate(self,url):
         self.page.goto(url)
 
-    def click_by_text(page):
-        browser = BasePage(page)
-        state = {"container": None}  # 每次点击后更新，供下一次使用
+    def click_by_text(self,text):
+          # 每次点击后更新，供下一次使用
 
-        def _click(text):
-            Tools.capture_baseline(page)  # 前
-            browser._click_by_text(text, state["container"])
-            state["container"] = Tools.diff_with_baseline(page)  # 后，结果留给下次
 
-        _click.reset = lambda: state.update(container=None)
-        return _click
-    def _click_by_text(self, text,popup_selector, timeout=10, wait_before=0.5):
+        Tools.capture_baseline(self.page)  # 前
+        self._click_by_text(text, self.state["container"])
+        self.state["container"] = Tools.diff_with_baseline(self.page)  # 后，结果留给下次
+        print(f'popup_selector:{self.state["container"]}')
+        # _click.reset = lambda: state.update(container=None)
+
+    def _click_by_text(self, text,popup_selector=None, timeout=10, wait_before=0.5):
         """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）,popup_selector为弹窗div属性"""
         # 等待页面稳定，networkidle 要求至少 500 毫秒内没有任何网络连接
         # self.page.wait_for_load_state('networkidle')
@@ -46,26 +46,24 @@ class BasePage:
         # 截图
 
         screenshot_bytes = self.page.screenshot(full_page=False)
-        # 转为 PIL Image
-        from PIL import Image
-        import io
-        img = Image.open(io.BytesIO(screenshot_bytes))
+
         img_bgr = cv2.imdecode(np.frombuffer(screenshot_bytes, np.uint8), cv2.IMREAD_COLOR)
         # 判断有没有弹窗，有就点击弹窗
-        if self.page.get_by_role("dialog").is_visible() or len(self.page.context.pages) > 1:
-            boxes = self._get_popup_ocr_coords(self.page, self.page.get_by_role("dialog"))
-            center = self.ocr.find_text_center(boxes, text)
-            # 点击按钮
-            self._clickCenter(center, text)
-            print("点击弹窗")
+        # if popup_selector:
+        #     boxes = self._get_popup_ocr_coords(self.page, self.page.get_by_role("dialog"))
+        #     center = self.ocr.find_text_center(boxes, text)
+        #     # 点击按钮
+        #     self._clickCenter(center, text)
+        #     print("点击弹窗")
         #需要获取当前url
-        boxes = self._get_ocr_boxes_with_cache(img,popup_selector, force_refresh=False)
+        boxes = self._get_ocr_boxes_with_cache(popup_selector=popup_selector, force_refresh=False)
 
 
         #在获取的文本内容画提取框，调试获取的文本
-        self.screenshot(boxes,img_bgr,config.SCREENSHOTS_PATH)
+        # self.screenshot(boxes,img_bgr,config.SCREENSHOTS_PATH)
 
         center = self.ocr.find_text_center(boxes, text)
+        print(f'识别文本：{text}，坐标：{center}')
         # 点击按钮
         self._clickCenter(center, text)
 
@@ -147,21 +145,19 @@ class BasePage:
         # 简单使用 URL 的 MD5 作为键（避免过长）
         return f"ocr_cache:{hashlib.md5(url.encode()).hexdigest()}"
 
-    def _get_ocr_boxes_with_cache(self,img,popup_selector, force_refresh=False):
+    def _get_ocr_boxes_with_cache(self,popup_selector, force_refresh=False):
         """
         获取 OCR 结果，优先从 Redis 读取，若不存在则执行 OCR 并缓存。
         """
-        if self.redis is None:
-            # 如果没有 Redis，直接走 OCR
-            return self.ocr.get_text_boxes(img)
+        # if self.redis is None:
+        #     # 如果没有 Redis，直接走 OCR
+        #     return self.ocr.get_text_boxes(img)
 
         url = self.page.url
-        if popup_selector:
-            cache_key = popup_selector
-        else:
-            cache_key = self._get_cache_key(url)
+        cache_key = popup_selector if popup_selector else self._get_cache_key(url)
 
-        if not force_refresh:
+
+        if not force_refresh and self.redis:
             # 尝试从 Redis 获取
             cached = self.redis.get(cache_key)
             if cached:
@@ -174,8 +170,38 @@ class BasePage:
                 except Exception as e:
                     print(f"缓存反序列化失败: {e}")
 
+
+        # 3. 初始化截图变量与偏移量
+        popup_x, popup_y = 0, 0
+        dpr = self.page.evaluate("window.devicePixelRatio")  # 处理系统缩放
+        # 判断是弹窗还是全屏，并截图
+        if popup_selector:
+            cache_key = popup_selector
+            popup = self.page.locator(popup_selector)
+            # 2. 获取弹窗的边界框 (CSS 像素)
+            box = popup.bounding_box()
+            if not box:
+                raise Exception("无法获取弹窗位置")
+            popup_x, popup_y = box["x"], box["y"]
+            # 4. 截取弹窗的图
+            screenshot_bytes = popup.screenshot()
+        else:
+            screenshot_bytes = self.page.screenshot(full_page=False) # 截全屏
+        # 5. 转为 OpenCV 图像
+        img = cv2.imdecode(np.frombuffer(screenshot_bytes, np.uint8), cv2.IMREAD_COLOR)
         # 执行 OCR
-        raw_result = self.ocr.get_text_boxes(img,popup_selector)  # 返回
+        raw_result = self.ocr.get_text_boxes(img)  # 返回
+        #核心坐标转换（相对图像像素 -> 绝对视口 CSS 像素）
+        for item in raw_result:
+            x1, y1, x2, y2 = item["box"]
+
+            # 除以 DPR 转回 CSS 尺寸，再加上弹窗的偏移量
+            item["box"] = (
+                popup_x + (x1 / dpr),
+                popup_y + (y1 / dpr),
+                popup_x + (x2 / dpr),
+                popup_y + (y2 / dpr)
+            )
         # # 序列化
         # serialized = self.orc.serialize_ocr_boxes(img)
         # 序列化存入 Redis

@@ -25,7 +25,16 @@ class BasePage:
 
     def navigate(self,url):
         self.page.goto(url)
+    def input_by_text(self,text):
 
+        self._click_by_text(text)
+        self.page.keyboard.insert_text(text)
+
+    def click_by_icon(self, text):
+        Tools.capture_baseline(self.page)  # 前
+        self._click_by_icon(text, self.state["container"])
+        self.state["container"] = Tools.diff_with_baseline(self.page)  # 后，结果留给下次
+        print(f'popup_selector:{self.state["container"]}')
     def click_by_text(self,text):
           # 每次点击后更新，供下一次使用
 
@@ -105,20 +114,14 @@ class BasePage:
         cv2.imwrite(annotated_path, img)
         print(f"带框整图已保存: {annotated_path}")
         print(f"共裁剪 {len(boxes)} 个文本区域到: {output_dir}/")
-    def click_by_icon(self, text, timeout=10, wait_before=0.5):
+    def _click_by_icon(self,text,popup_selector=None, timeout=10, wait_before=0.5):
         """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）"""
         # 等待页面稳定
-        self.page.wait_for_load_state('networkidle')
+        self.page.wait_for_load_state(state='load')
         time.sleep(wait_before)
-        # 截图
 
-        screenshot_bytes = self.page.screenshot(full_page=False)
-        # 转为 PIL Image
-        from PIL import Image
-        import io
-        img = Image.open(io.BytesIO(screenshot_bytes))
-        image = self._get_icon_boxes_with_cache(text)
-        center = self.ocr.find_img_center(img,image)
+        boxes = self._get_ocr_boxes_with_cache(popup_selector=popup_selector,icon=text, force_refresh=False)
+        center = self.ocr.find_img_center(boxes,image)
         #点击按钮
         self._clickCenter(center, text)
 
@@ -145,7 +148,7 @@ class BasePage:
         # 简单使用 URL 的 MD5 作为键（避免过长）
         return f"ocr_cache:{hashlib.md5(url.encode()).hexdigest()}"
 
-    def _get_ocr_boxes_with_cache(self,popup_selector, force_refresh=False):
+    def _get_ocr_boxes_with_cache(self,popup_selector,icon=False, force_refresh=False):
         """
         获取 OCR 结果，优先从 Redis 读取，若不存在则执行 OCR 并缓存。
         """
@@ -154,7 +157,12 @@ class BasePage:
         #     return self.ocr.get_text_boxes(img)
 
         url = self.page.url
-        cache_key = popup_selector if popup_selector else self._get_cache_key(url)
+        if popup_selector:
+            cache_key = popup_selector
+        elif icon:
+            cache_key = icon
+        else:
+            cache_key = self._get_cache_key(url)
 
 
         if not force_refresh and self.redis:
@@ -282,4 +290,5 @@ class BasePage:
             self._save_step_screenshot(f"click_{text}")
             return True
         else:
+            self._save_step_screenshot(f"click_{text}")
             raise Exception(f"未通过 OCR 找到icon: {text}")

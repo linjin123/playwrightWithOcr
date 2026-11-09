@@ -1,5 +1,8 @@
+import json
 import os
 import pickle
+import time
+
 import cv2
 import pytest
 from playwright.sync_api import sync_playwright
@@ -21,7 +24,9 @@ def playwright():
 @pytest.fixture(scope="session")
 def browser(playwright):
     # 启动浏览器（可选择 headless=False 方便调试）
-    browser = playwright.chromium.launch(headless=False)
+    browser = playwright.chromium.launch(
+        headless=False,
+        args=["--ignore-certificate-errors"])
     yield browser
     browser.close()
 
@@ -34,7 +39,7 @@ def context(browser, auth_state: str):
     这样既不需要重新请求登录接口，又保证了用例之间互不影响。
     """
     # 加载保存的 auth_state.json 文件，瞬间完成登录注入
-    context = browser.new_context(storage_state=auth_state)
+    context = browser.new_context(viewport={"width": 1920, "height": 1080},device_scale_factor=1,storage_state=auth_state)
 
     # 如果你的系统是纯 Token 机制，且存在 localStorage 中，可以在这里额外注入
     # context.add_init_script("window.localStorage.setItem('token', 'xxxxx')")
@@ -57,7 +62,7 @@ def auth_state(browser):
     # if os.path.exists(AUTH_FILE): return AUTH_FILE
 
     print("\n>>> 正在执行全局前置登录...")
-    context = browser.new_context(viewport={"width": 1920, "height": 1080},device_scale_factor=1,ignore_https_errors=True)
+    context = browser.new_context(ignore_https_errors=True)
 
     # 请求登录接口
     response = context.request.post(API_LOGIN_URL, data={
@@ -69,9 +74,36 @@ def auth_state(browser):
 
     # 如果系统是 Token 机制（非 Cookie）
     token = response.json().get("data", {}).get("accessToken")
+    refreshToken = response.json().get("data", {}).get("refreshToken")
     assert token is not None, f"响应中未找到 accessToken，响应: {response.text()}"
 
-        # 将当前的 Cookie、LocalStorage 等状态保存到本地文件
+
+    # 构造和前端一模一样的 JSON 结构
+    current_ms = int(time.time() * 1000)  # 当前时间戳(毫秒)
+    # 设置一个极大的过期时间（比如 9999年）
+    expire_ms = current_ms + 24 * 60 * 60 * 1000
+
+    # token_data = {
+    #     "c": current_ms,
+    #     "e": expire_ms,
+    #     "v": f'"{token}"'
+    # }
+    #
+    # # 2. 转成字符串
+    # token_json_str = json.dumps(token_data)
+    # 直接手工拼接出和前端 100% 一致的字符串
+    # 注意这里的 \\" 会在 Python 中输出为 \"，完美契合前端的需求
+    token_json_str = f'{{"c":{current_ms},"e":{expire_ms},"v":"\\\\"{token}\\\\""}}'
+    refreshToken = f'{{"c":{current_ms},"e":{expire_ms},"v":"\\\\"{refreshToken}\\\\""}}'
+    print(f"\n>>> token:{token_json_str}")
+    context.add_init_script(f"""
+            window.localStorage.setItem('ACCESS_TOKEN', '{token_json_str}');
+            window.localStorage.setItem('REFRESH_TOKEN', '{refreshToken}');
+        """)
+    page = context.new_page()
+    # 访问主域名，触发 init_script,url不能再次使用login，会导致LocalStorage失效，需使用首页url
+    page.goto("https://10.235.2.96:31080/#/index", wait_until="domcontentloaded", timeout=10000)
+    # 将当前的 Cookie、LocalStorage 等状态保存到本地文件
     context.storage_state(path=AUTH_FILE)
     context.close()
     return AUTH_FILE

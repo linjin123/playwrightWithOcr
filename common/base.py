@@ -30,9 +30,9 @@ class BasePage:
         self._click_by_text(text)
         self.page.keyboard.insert_text(text)
 
-    def click_by_icon(self, text):
+    def click_by_icon(self, iconName,templatePath):
         Tools.capture_baseline(self.page)  # 前
-        self._click_by_icon(text, self.state["container"])
+        self._click_by_icon(iconName,templatePath, self.state["container"])
         self.state["container"] = Tools.diff_with_baseline(self.page)  # 后，结果留给下次
         print(f'popup_selector:{self.state["container"]}')
     def click_by_text(self,text):
@@ -52,11 +52,6 @@ class BasePage:
         # 等待整个页面（包括图片、样式表等所有资源）加载完毕
         self.page.wait_for_load_state(state='load')
         time.sleep(wait_before)
-        # 截图
-
-        screenshot_bytes = self.page.screenshot(full_page=False)
-
-        img_bgr = cv2.imdecode(np.frombuffer(screenshot_bytes, np.uint8), cv2.IMREAD_COLOR)
         # 判断有没有弹窗，有就点击弹窗
         # if popup_selector:
         #     boxes = self._get_popup_ocr_coords(self.page, self.page.get_by_role("dialog"))
@@ -114,16 +109,17 @@ class BasePage:
         cv2.imwrite(annotated_path, img)
         print(f"带框整图已保存: {annotated_path}")
         print(f"共裁剪 {len(boxes)} 个文本区域到: {output_dir}/")
-    def _click_by_icon(self,text,popup_selector=None, timeout=10, wait_before=0.5):
+    def _click_by_icon(self,iconName,templatePath=None,popup_selector=None,method=cv2.TM_CCOEFF_NORMED, timeout=10, wait_before=0.5):
         """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）"""
         # 等待页面稳定
         self.page.wait_for_load_state(state='load')
         time.sleep(wait_before)
 
-        boxes = self._get_ocr_boxes_with_cache(popup_selector=popup_selector,icon=text, force_refresh=False)
-        center = self.ocr.find_img_center(boxes,image)
+        boxes = self._get_icon_boxes_with_cache(popup_selector,iconName,templatePath,method, force_refresh=False)
+        center = self.ocr.find_icon_center(boxes, iconName)
+        print(f'识别文本：{iconName}，坐标：{center}')
         #点击按钮
-        self._clickCenter(center, text)
+        self._clickCenter(center, iconName)
 
 
 
@@ -159,8 +155,6 @@ class BasePage:
         url = self.page.url
         if popup_selector:
             cache_key = popup_selector
-        elif icon:
-            cache_key = icon
         else:
             cache_key = self._get_cache_key(url)
 
@@ -184,7 +178,6 @@ class BasePage:
         dpr = self.page.evaluate("window.devicePixelRatio")  # 处理系统缩放
         # 判断是弹窗还是全屏，并截图
         if popup_selector:
-            cache_key = popup_selector
             popup = self.page.locator(popup_selector)
             # 2. 获取弹窗的边界框 (CSS 像素)
             box = popup.bounding_box()
@@ -216,12 +209,70 @@ class BasePage:
         self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
         return raw_result
 
-    def _get_icon_boxes_with_cache(self,text):
-        # 读取 bytes
-        template_bytes = self.redis.get(text)
-        # 反序列化为 numpy 数组
-        template = pickle.loads(template_bytes)
-        return template
+    def _get_icon_boxes_with_cache(self, popup_selector, iconName, templatePath, method,
+                                   force_refresh=False):
+        """
+        获取 OCR 结果，优先从 Redis 读取，若不存在则执行 OCR 并缓存。
+        """
+        # if self.redis is None:
+        #     # 如果没有 Redis，直接走 OCR
+        #     return self.ocr.get_text_boxes(img)
+
+        if popup_selector:
+            cache_key = popup_selector
+        else:
+            cache_key = iconName
+
+        if not force_refresh and self.redis:
+            # 尝试从 Redis 获取
+            cached = self.redis.get(cache_key)
+            if cached:
+                try:
+                    data = json.loads(cached)
+                    # 将 JSON 转换回 PaddleOCR 期望的格式？取决于后续使用方式。
+                    # 如果后续只需坐标和文本，可以保留为列表字典格式，不转回原始格式。
+                    # 这里假设返回的就是我们序列化后的格式，即 [{'box':..., 'text':..., 'confidence':...}]
+                    return data
+                except Exception as e:
+                    print(f"缓存反序列化失败: {e}")
+
+        # 3. 初始化截图变量与偏移量
+        popup_x, popup_y = 0, 0
+        dpr = self.page.evaluate("window.devicePixelRatio")  # 处理系统缩放
+        # 判断是弹窗还是全屏，并截图
+        if popup_selector:
+            popup = self.page.locator(popup_selector)
+            # 2. 获取弹窗的边界框 (CSS 像素)
+            box = popup.bounding_box()
+            if not box:
+                raise Exception("无法获取弹窗位置")
+            popup_x, popup_y = box["x"], box["y"]
+            # 4. 截取弹窗的图
+            screenshot_bytes = popup.screenshot()
+        else:
+            screenshot_bytes = self.page.screenshot(full_page=False)  # 截全屏
+        # 转为 OpenCV 图像
+        img = cv2.imdecode(np.frombuffer(screenshot_bytes, np.uint8), cv2.IMREAD_COLOR)
+        templateImg = cv2.imdecode(np.fromfile(templatePath, np.uint8), cv2.IMREAD_COLOR)
+        # 执行 cv2识别返回模板坐标
+        raw_result = self.ocr.get_icon_boxes(iconName,img,templateImg,method)  # 返回
+        print(f"raw_result:{raw_result}")
+        # 核心坐标转换（相对图像像素 -> 绝对视口 CSS 像素）
+        for item in raw_result:
+            x1, y1, x2, y2 = item["box"]
+
+            # 除以 DPR 转回 CSS 尺寸，再加上弹窗的偏移量
+            item["box"] = (
+                popup_x + (x1 / dpr),
+                popup_y + (y1 / dpr),
+                popup_x + (x2 / dpr),
+                popup_y + (y2 / dpr)
+            )
+        # # 序列化
+        # serialized = self.orc.serialize_ocr_boxes(img)
+        # 序列化存入 Redis
+        self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
+        return raw_result
 
     def _get_popup_ocr_coords(self,page, popup_selector):
         popup = page.locator(popup_selector)

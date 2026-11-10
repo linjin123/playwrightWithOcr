@@ -18,64 +18,48 @@ ocr = PaddleOCR(
     text_det_box_thresh=0.7
 )
 boxes = []
-img = cv2.imdecode(np.fromfile(r"C:\Users\linjin\Pictures\test.png", dtype=np.uint8), cv2.IMREAD_COLOR)
-result = ocr.predict(img)
-texts = result[0].get("rec_texts", [])
-scores = result[0].get("rec_scores", [])
-rects = result[0].get("rec_boxes", [])  # 优先用矩形框
-polys = result[0].get("rec_polys") or result[0].get("dt_polys", [])  # 备用：四点坐标
+top_left = None
+match_val = None
+method = cv2.TM_CCOEFF_NORMED
+text = "一级目录按钮"
+img = cv2.imdecode(np.fromfile(r"C:\Users\linjin\PycharmProjects\playwrightWithOcr\modelPage\page.png", np.uint8), cv2.IMREAD_COLOR)
+templateImg = cv2.imdecode(np.fromfile(r"C:\Users\linjin\PycharmProjects\playwrightWithOcr\modelPage\一级目录按钮.png", np.uint8), cv2.IMREAD_COLOR)
+boxes = []
+h, w = templateImg.shape[:2]
+result = cv2.matchTemplate(img, templateImg, method)  # 返回
+min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+# 根据匹配方法确定最佳匹配位置
+if method in [cv2.TM_SQDIFF, cv2.TM_SQDIFF_NORMED]:
+    if min_val < 0.7:
+        top_left = min_loc
+        match_val = min_val
+else:
+    if max_val > 0.6:
+        top_left = max_loc
+        match_val = max_val
+x1, y1 = top_left
+x2 = x1 + w
+y2 = y1 + h
+# box = x1, y1, x2, y2
+# boxes.append({
+#     "text": iconName,
+#     "box": box,
+#     "confidence": match_val
+# })
+# return boxes
+cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+cv2.putText(img, text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1)
+print(f"中文内容为：{text}")
+# Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).show()
+# 文件名去掉非法字符，只保留前 30 字符
+# safe_text = "".join(c for c in text if c.isalnum() or c in "._- ")[:30]
+# crop_name = f"{i:03d}_{text}.png"
+# cv2.imwrite(os.path.join(output_dir, crop_name), crop)
 
-for i, text in enumerate(texts):
-    if i >= len(polys):
-        continue
-    score = float(scores[i]) if i < len(scores) else 0.0
-    # points = polys[i]
-    # if isinstance(points[0], (int, float, np.floating, np.integer)):
-    #     points = np.array(points).reshape(-1, 2)
-    # 优先取 rec_boxes
-    # if i < len(rects):
-    box = tuple(map(float, rects[i]))  # [x1, y1, x2, y2]
+# 3. 在整图上标注文本（可选，中文需额外处理）
+# cv2.putText 不支持中文，见文末说明
 
-
-    # xs = [p[0] for p in points]
-    # ys = [p[1] for p in points]
-    # box = (min(xs), min(ys), max(xs), max(ys))
-
-    boxes.append({
-        "text": text,
-        "box": box,
-        "confidence": score
-    })
-# print(f"框内容：{boxes}")
-for i, item in enumerate(boxes):
-    x1, y1, x2, y2 = map(int, item["box"])
-    # 边界保护，防止越界
-    # x1 = max(0, min(int(x1), w - 1))
-    # y1 = max(0, min(int(y1), h - 1))
-    # x2 = max(0, min(int(x2), w))
-    # y2 = max(0, min(int(y2), h))
-    if x2 <= x1 or y2 <= y1 or item['confidence'] <= 0.7 or len(item["text"]) >= 10:
-        continue
-
-    # 1. 在整图上画框
-
-    cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-    # 2. 裁剪并保存
-    crop = img[y1:y2, x1:x2]
-    text = item["text"].replace("/", "_").replace("\\", "_")
-    cv2.putText(img, text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1)
-    print(f"中文内容为：{text}")
-    # Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).show()
-    # 文件名去掉非法字符，只保留前 30 字符
-    # safe_text = "".join(c for c in text if c.isalnum() or c in "._- ")[:30]
-    # crop_name = f"{i:03d}_{text}.png"
-    # cv2.imwrite(os.path.join(output_dir, crop_name), crop)
-
-    # 3. 在整图上标注文本（可选，中文需额外处理）
-    # cv2.putText 不支持中文，见文末说明
-
-    # 保存带框的整图
+# 保存带框的整图
 # annotated_path = os.path.join(output_dir, "annotated.png")
 Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).show()
 # cv2.imwrite(annotated_path, img)

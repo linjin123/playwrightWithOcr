@@ -13,7 +13,7 @@ DEBUG = True
 # 路径配置 os.path.dirname上一级
 script_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(script_dir)
-TEMPLATE_PATH = os.path.join(root_dir, "modelPage","fujian.png")
+TEMPLATE_PATH = os.path.join(root_dir, "modelPage")
 SCREENSHOTS_PATH = os.path.join(root_dir, "test","screenshots")
 #redis单例
 # redis = redis.Redis(

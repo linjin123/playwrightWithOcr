@@ -68,6 +68,33 @@ class paddleOCR:
 
         return boxes
 
+    def get_icon_boxes(self,iconName, img,templateImg,method):
+        boxes = []
+        h, w = templateImg.shape[:2]
+        result = cv2.matchTemplate(img, templateImg, method)  # 返回
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+        # 根据匹配方法确定最佳匹配位置
+        if method in [cv2.TM_SQDIFF, cv2.TM_SQDIFF_NORMED]:
+            if min_val < 0.7:
+                top_left = min_loc
+                match_val = min_val
+        else:
+            if min_val > 0.7:
+                top_left = max_loc
+                match_val = max_val
+        if top_left is None:
+            raise ValueError(f"识别不到图标坐标")
+        x1, y1 = top_left
+        x2 = x1 + w
+        y2 = y1 + h
+        box = x1, y1, x2, y2
+        boxes.append({
+            "text": iconName,
+            "box": box,
+            "confidence": match_val
+        })
+        return boxes
+
     def find_text_center(self, boxes, target_text, threshold=0.7):
         """在图像中查找指定文本，返回其中心坐标 (x, y) 或 None"""
         # boxes = self.get_text_boxes(image)
@@ -85,38 +112,23 @@ class paddleOCR:
                 return (cx, cy)
         return None
 
-    def find_img_center(self,img, template, method=cv2.TM_CCOEFF_NORMED, threshold=0.8, debug=True):
-        # 3. 截图并让模型预测
-        boxes = []
-        # 4. 遍历所有检测到的图标
-        # img = cv2.imread(img)
-        # print(f"路径: {template_path}")
-        # template = cv2.imread(template_path)  # 小图（图标）
-        if img is None or template is None:
-            print("图片读取失败，请检查路径")
-            return
+    def find_icon_center(self, boxes, iconName):
+        """在图像中查找指定文本，返回其中心坐标 (x, y) 或 None"""
+        # boxes = self.get_text_boxes(image)
+        for item in boxes:
+            if iconName in item['text']:
+                # 计算中心坐标（使用矩形的近似中心）PaddleOCR 2.x
+                # xs = [p[0] for p in item['box']]
+                # ys = [p[1] for p in item['box']]
+                # cx = int((min(xs) + max(xs)) / 2)
+                # cy = int((min(ys) + max(ys)) / 2)
+                # 计算中心坐标（使用矩形的近似中心）PaddleOCR 3.x
+                x1, y1, x2, y2 =item['box']
+                cx = (x1 + x2) / 2
+                cy = (y1 + y2) / 2
+                return (cx, cy)
+        return None
 
-        h, w = template.shape[:2]  # 模板的高度和宽度
-
-        # 2. 执行模板匹配
-        result = cv2.matchTemplate(img, template, method)
-        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-
-        # 3. 根据匹配方法确定最佳匹配位置
-        if method in [cv2.TM_SQDIFF, cv2.TM_SQDIFF_NORMED]:
-            # 平方差匹配：值越小越好
-            top_left = min_loc
-            match_val = min_val
-        else:
-            # 相关系数匹配：值越大越好
-            top_left = max_loc
-            match_val = max_val
-        x1, y1 = top_left
-        x2 = x1 + w
-        y2 = y1 + h
-        # boxes.append([x, y, x + w, y + h])
-        center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
-        return (center_x,center_y)
 
     def serialize_ocr_boxes(ocr_result):
         """

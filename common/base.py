@@ -44,6 +44,50 @@ class BasePage:
         self.state["container"] = Tools.diff_with_baseline(self.page)  # 后，结果留给下次
         print(f'popup_selector:{self.state["container"]}')
         # _click.reset = lambda: state.update(container=None)
+    def click_by_text_for_scroll(self,text):
+          # 每次点击后更新，供下一次使用
+        Tools.capture_baseline(self.page)  # 前
+        self._click_by_text_for_scroll(text, self.state["container"])
+        self.state["container"] = Tools.diff_with_baseline(self.page)  # 后，结果留给下次
+        print(f'popup_selector:{self.state["container"]}')
+
+    def _click_by_text_for_scroll(self, text,popup_selector=None, timeout=10, wait_before=0.5):
+        """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）,popup_selector为弹窗div属性"""
+        # 等待页面稳定，networkidle 要求至少 500 毫秒内没有任何网络连接
+        self.page.wait_for_load_state('networkidle')
+        # 等待整个页面（包括图片、样式表等所有资源）加载完毕
+        # self.page.wait_for_load_state(state='load')
+        time.sleep(wait_before)
+        # 判断有没有弹窗，有就点击弹窗
+        # if popup_selector:
+        #     boxes = self._get_popup_ocr_coords(self.page, self.page.get_by_role("dialog"))
+        #     center = self.ocr.find_text_center(boxes, text)
+        #     # 点击按钮
+        #     self._clickCenter(center, text)
+        #     print("点击弹窗")
+        #需要获取当前url
+        # boxes = self._get_ocr_boxes_with_cache_for_scroll(popup_selector=popup_selector, force_refresh=True)
+        #
+        #
+        # #在获取的文本内容画提取框，调试获取的文本
+        # # self.screenshot(boxes,img_bgr,config.SCREENSHOTS_PATH)
+        # image = self.page.screenshot(full_page=False)
+        # img = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
+        # center = self.ocr.find_text_center(boxes, text,img)
+        # print(f'识别文本：{text}，坐标：{center}')
+        # # 点击按钮
+        # self._clickCenter(center, text)
+
+        if popup_selector:
+            popup = self.page.locator(popup_selector).locator(f"text={text}")
+            popup.scroll_into_view_if_needed()
+            popup.screenshot(path="perfect_template.png", animations="disabled")
+            popup.click()
+        else:
+            popup = self.page.locator(f"text={text}")
+            popup.scroll_into_view_if_needed()
+            popup.screenshot(path="perfect_template.png", animations="disabled")
+            popup.click()
 
     def _click_by_text(self, text,popup_selector=None, timeout=10, wait_before=0.5):
         """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）,popup_selector为弹窗div属性"""
@@ -217,7 +261,63 @@ class BasePage:
             self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
         return raw_result
 
-
+    # def _get_ocr_boxes_with_cache_for_scroll(self,popup_selector,icon=False, force_refresh=False):
+    #     url = self.page.url
+    #     if popup_selector:
+    #         cache_key = popup_selector
+    #     else:
+    #         cache_key = self._get_cache_key(url)
+    #
+    #     if not force_refresh and self.redis:
+    #         # 尝试从 Redis 获取
+    #         cached = self.redis.get(cache_key)
+    #         if cached:
+    #             try:
+    #                 data = json.loads(cached)
+    #                 # 将 JSON 转换回 PaddleOCR 期望的格式？取决于后续使用方式。
+    #                 # 如果后续只需坐标和文本，可以保留为列表字典格式，不转回原始格式。
+    #                 # 这里假设返回的就是我们序列化后的格式，即 [{'box':..., 'text':..., 'confidence':...}]
+    #                 return data
+    #             except Exception as e:
+    #                 print(f"缓存反序列化失败: {e}")
+    #
+    #     # 3. 初始化截图变量与偏移量
+    #     popup_x, popup_y = 0, 0
+    #     dpr = self.page.evaluate("window.devicePixelRatio")  # 处理系统缩放
+    #     # 判断是弹窗还是全屏，并截图
+    #     if popup_selector:
+    #         popup = self.page.locator(popup_selector).locator(f"text={popup_selector}")
+    #         popup.scroll_into_view_if_needed()
+    #         popup.click()
+    #     else:
+    #         popup = self.page.locator(f"text={popup_selector}")
+    #         popup.scroll_into_view_if_needed()
+    #         popup.click()
+    #     # 5. 转为 OpenCV 图像
+    #     img = cv2.imdecode(np.frombuffer(screenshot_bytes, np.uint8), cv2.IMREAD_COLOR)
+    #     # Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).show()
+    #     # 执行 OCR
+    #     raw_result = self.ocr.get_text_boxes(img)  # 返回
+    #     print(f"raw_result:{raw_result}")
+    #     # 核心坐标转换（相对图像像素 -> 绝对视口 CSS 像素）
+    #     for item in raw_result:
+    #         x1, y1, x2, y2 = item["box"]
+    #
+    #         # 除以 DPR 转回 CSS 尺寸，再加上弹窗的偏移量
+    #         item["box"] = (
+    #             popup_x + (x1 / dpr),
+    #             popup_y + (y1 / dpr),
+    #             popup_x + (x2 / dpr),
+    #             popup_y + (y2 / dpr)
+    #         )
+    #     # # 序列化
+    #     # serialized = self.orc.serialize_ocr_boxes(img)
+    #     # 序列化存入 Redis
+    #     if popup_selector:
+    #         self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
+    #     else:
+    #         self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
+    #     return raw_result
     def _get_icon_boxes_with_cache(self, popup_selector, iconName, templatePath, method,
                                    force_refresh=False):
         """

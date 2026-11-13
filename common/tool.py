@@ -96,8 +96,8 @@ class Tools:
           
           
           // 2. 层级与定位特征 (悬浮元素的标配)
-          if (zIndex > 50) score += 300;
-          if (position === 'fixed' || position === 'absolute') score += 200;
+          // if (zIndex > 50) score += 300;
+          // if (position === 'fixed' || position === 'absolute') score += 200;
           
           // 3. 面积特征 (全屏遮罩或大面积弹窗)
           if (cover > 0.8) score += 100;

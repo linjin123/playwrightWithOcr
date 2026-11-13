@@ -127,12 +127,12 @@ class paddleOCR:
                 # cx = int((min(xs) + max(xs)) / 2)
                 # cy = int((min(ys) + max(ys)) / 2)
                 # 计算中心坐标（使用矩形的近似中心）PaddleOCR 3.x
-                # x1, y1, x2, y2 =item['box']
-                x1, y1, x2, y2 = map(int, item['box'])
-                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(img, "图标", (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1)
-                Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).show()
-                print(f"四坐标：{item['box']}")
+                x1, y1, x2, y2 =item['box']
+                # x1, y1, x2, y2 = map(int, item['box'])
+                # cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                # cv2.putText(img, "图标", (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1)
+                # Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).show()
+                # print(f"四坐标：{item['box']}")
                 cx = (x1 + x2) / 2
                 cy = (y1 + y2) / 2
                 return (cx, cy)

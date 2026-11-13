@@ -29,7 +29,7 @@ nodes = [
     ClusterNode('172.23.1.153', 7001),
     ClusterNode('172.23.1.154', 7001),
 ]
-redis = RedisCluster(startup_nodes=nodes, decode_responses=True,password="unipower123")
+redis = RedisCluster(startup_nodes=nodes, decode_responses=False,password="unipower123")
 
 if __name__ == "__main__":
     print(f"路径1: %d",root_dir)

@@ -58,15 +58,8 @@ class BasePage:
         # 等待整个页面（包括图片、样式表等所有资源）加载完毕
         # self.page.wait_for_load_state(state='load')
         time.sleep(wait_before)
-        # 判断有没有弹窗，有就点击弹窗
-        # if popup_selector:
-        #     boxes = self._get_popup_ocr_coords(self.page, self.page.get_by_role("dialog"))
-        #     center = self.ocr.find_text_center(boxes, text)
-        #     # 点击按钮
-        #     self._clickCenter(center, text)
-        #     print("点击弹窗")
         #需要获取当前url
-        # boxes = self._get_ocr_boxes_with_cache_for_scroll(popup_selector=popup_selector, force_refresh=True)
+        # boxes = self._get_ocr_boxes_with_cache_for_scroll(popup_selector=popup_selector, force_refresh=False)
         #
         #
         # #在获取的文本内容画提取框，调试获取的文本
@@ -104,14 +97,14 @@ class BasePage:
         #     self._clickCenter(center, text)
         #     print("点击弹窗")
         #需要获取当前url
-        boxes = self._get_ocr_boxes_with_cache(popup_selector=popup_selector, force_refresh=True)
+        center = self._get_ocr_center_with_cache(text,popup_selector=popup_selector, force_refresh=False)
 
 
         #在获取的文本内容画提取框，调试获取的文本
         # self.screenshot(boxes,img_bgr,config.SCREENSHOTS_PATH)
-        image = self.page.screenshot(full_page=False)
-        img = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
-        center = self.ocr.find_text_center(boxes, text,img)
+        # image = self.page.screenshot(full_page=False)
+        # img = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
+        # center = self.ocr.find_text_center(boxes, text,img)
         print(f'识别文本：{text}，坐标：{center}')
         # 点击按钮
         self._clickCenter(center, text)
@@ -161,8 +154,8 @@ class BasePage:
         self.page.wait_for_load_state(state='networkidle') #等待网络安静
         time.sleep(wait_before)
 
-        boxes = self._get_icon_boxes_with_cache(popup_selector,iconName,templatePath,method, force_refresh=True)
-        center = self.ocr.find_icon_center(boxes, iconName)
+        center = self._get_icon_center_with_cache(popup_selector,iconName,templatePath,method, force_refresh=False)
+
         print(f'识别文本：{iconName}，坐标：{center}')
         #点击按钮
         self._clickCenter(center, iconName)
@@ -185,12 +178,13 @@ class BasePage:
     def take_screenshot(self, name="screenshot"):
         return self._save_step_screenshot(name)
 
-    def _get_cache_key(self, url):
+    def _get_cache_key(self, url,text,mark=None):
         """生成缓存的键，可以结合屏幕尺寸等"""
+        raw_string = f"{url}{text}{mark}"
         # 简单使用 URL 的 MD5 作为键（避免过长）
-        return f"ocr_cache:{hashlib.md5(url.encode()).hexdigest()}"
+        return f"{hashlib.md5(raw_string.encode()).hexdigest()}"
 
-    def _get_ocr_boxes_with_cache(self,popup_selector,icon=False, force_refresh=False):
+    def _get_ocr_center_with_cache(self,text,popup_selector,icon=False, force_refresh=False):
         """
         获取 OCR 结果，优先从 Redis 读取，若不存在则执行 OCR 并缓存。
         """
@@ -200,9 +194,9 @@ class BasePage:
 
         url = self.page.url
         if popup_selector:
-            cache_key = popup_selector
+            cache_key = self._get_cache_key(url,text,"popup")
         else:
-            cache_key = self._get_cache_key(url)
+            cache_key = self._get_cache_key(url,text)
 
 
         if not force_refresh and self.redis:
@@ -210,7 +204,7 @@ class BasePage:
             cached = self.redis.get(cache_key)
             if cached:
                 try:
-                    data = json.loads(cached)
+                    data = pickle.loads(cached)
                     # 将 JSON 转换回 PaddleOCR 期望的格式？取决于后续使用方式。
                     # 如果后续只需坐标和文本，可以保留为列表字典格式，不转回原始格式。
                     # 这里假设返回的就是我们序列化后的格式，即 [{'box':..., 'text':..., 'confidence':...}]
@@ -240,7 +234,7 @@ class BasePage:
         # Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).show()
         # 执行 OCR
         raw_result = self.ocr.get_text_boxes(img)  # 返回
-        print(f"raw_result:{raw_result}")
+        # print(f"raw_result:{raw_result}")
         #核心坐标转换（相对图像像素 -> 绝对视口 CSS 像素）
         for item in raw_result:
             x1, y1, x2, y2 = item["box"]
@@ -255,11 +249,9 @@ class BasePage:
         # # 序列化
         # serialized = self.orc.serialize_ocr_boxes(img)
         # 序列化存入 Redis
-        if popup_selector:
-            self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
-        else:
-            self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
-        return raw_result
+        center = self.ocr.find_icon_center(raw_result, text)
+        self.redis.setex(cache_key, self.cache_ttl, pickle.dumps(center))
+        return center
 
     # def _get_ocr_boxes_with_cache_for_scroll(self,popup_selector,icon=False, force_refresh=False):
     #     url = self.page.url
@@ -318,26 +310,25 @@ class BasePage:
     #     else:
     #         self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
     #     return raw_result
-    def _get_icon_boxes_with_cache(self, popup_selector, iconName, templatePath, method,
+    def _get_icon_center_with_cache(self, popup_selector, iconName, templatePath, method,
                                    force_refresh=False):
         """
-        获取 OCR 结果，优先从 Redis 读取，若不存在则执行 OCR 并缓存。
+        获取 OCR 结果，优先从 Redis 读取，若不存在则执行 OCR 并缓存。缓存按键的唯一坐标
         """
         # if self.redis is None:
         #     # 如果没有 Redis，直接走 OCR
         #     return self.ocr.get_text_boxes(img)
-
+        url = self.page.url
         if popup_selector:
-            cache_key = popup_selector
+            cache_key = self._get_cache_key(url,iconName,"popup")
         else:
-            cache_key = iconName
-
+            cache_key = self._get_cache_key(url,iconName,"icon")
         if not force_refresh and self.redis:
             # 尝试从 Redis 获取
             cached = self.redis.get(cache_key)
             if cached:
                 try:
-                    data = json.loads(cached)
+                    data = pickle.loads(cached)
                     # 将 JSON 转换回 PaddleOCR 期望的格式？取决于后续使用方式。
                     # 如果后续只需坐标和文本，可以保留为列表字典格式，不转回原始格式。
                     # 这里假设返回的就是我们序列化后的格式，即 [{'box':..., 'text':..., 'confidence':...}]
@@ -375,10 +366,12 @@ class BasePage:
         # 转为 OpenCV 图像
         img = cv2.imdecode(np.frombuffer(screenshot_bytes, np.uint8), cv2.IMREAD_COLOR)
         # Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).show()
-        templateImg = cv2.imdecode(np.fromfile(r"C:\Users\linjin\PycharmProjects\playwrightWithOcr\modelPage\一级目录按钮.png", np.uint8), cv2.IMREAD_COLOR)
+        templateImg = cv2.imdecode(np.fromfile(templatePath, np.uint8), cv2.IMREAD_COLOR)
         # 执行 cv2识别返回模板坐标
-        raw_result = self.ocr.get_icon_boxes(iconName,img,templateImg,method)  # 返回
-        print(f"raw_result:{raw_result}")
+        raw_result = self.ocr.get_icon_boxes(iconName,img,templateImg,method)
+
+        # 返回
+        # print(f"raw_result:{raw_result}")
         # 核心坐标转换（相对图像像素 -> 绝对视口 CSS 像素）
         for item in raw_result:
             x1, y1, x2, y2 = item["box"]
@@ -393,8 +386,9 @@ class BasePage:
         # # 序列化
         # serialized = self.orc.serialize_ocr_boxes(img)
         # 序列化存入 Redis
-        self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
-        return raw_result
+        center = self.ocr.find_icon_center(raw_result, iconName)
+        self.redis.setex(cache_key, self.cache_ttl, pickle.dumps(center))
+        return center
 
     def _get_popup_ocr_coords(self,page, popup_selector):
         popup = page.locator(popup_selector)

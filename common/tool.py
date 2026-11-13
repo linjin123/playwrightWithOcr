@@ -31,7 +31,7 @@ class Tools:
     :return:          元素描述列表（可序列化）或采样点数量
     """
     # 等待整个页面（包括图片、样式表等所有资源）加载完毕
-    page.wait_for_load_state(state='load')
+    page.wait_for_load_state(state='networkidle')
     page.evaluate(
       _JS_CAPTURE_BASELINE,
       {"G": grid, "varName": var_name},
@@ -59,55 +59,77 @@ class Tools:
         }
         const ratio = changed.length / k;
 
-        // ---- 2. 祖先链计数（核心改动）----
+        // ---- 2. 祖先链计数 ----
         const freq = new Map();
         for (const c of changed) {
           let cur = c.el;
-          while (cur && cur !== document.body && cur !== document.documentElement) {
+          let depth = 0;
+          while (cur && cur !== document.body && cur !== document.documentElement && depth < 10) {
             freq.set(cur, (freq.get(cur) || 0) + 1);
             cur = cur.parentElement;
+            depth++;
           }
         }
 
         // ---- 3. 筛选候选 ----
-        const candidates = [...freq.entries()]
-          .filter(([, n]) => n < changed.length)      // 排除包含所有点的根容器（如 #app）
-          .map(([el, n]) => {
-            const r = el.getBoundingClientRect();
-            const cover = (r.width * r.height) / (vw * vh);
-            const cx = r.left + r.width / 2;
-            const cy = r.top + r.height / 2;
-            const centered = Math.abs(cx - vw / 2) < vw * 0.25
-                          && Math.abs(cy - vh / 2) < vh * 0.25;
-            const interactive = el.querySelectorAll(
-              'button,input,textarea,select,[role=button],[tabindex],a[href]'
-            ).length;
-            const hasText = (el.innerText || '').trim().length > 0;
-            return { el, n, cover, centered, interactive, hasText };
-          })
-          .filter(c => c.cover > 0.03 && c.cover < 0.98);   // 排除过大/过小
+        let candidates = [];
 
-        // ---- 4. 分类 ----
-        const mask = candidates
-          .filter(c => c.cover >= 0.9)
-          .sort((a, b) => b.n - a.n)[0]?.el || null;
-
-        const dialog = candidates
-          .filter(c => c.centered && (c.interactive >= 1 || c.hasText))
-          .sort((a, b) => b.n - a.n)[0]?.el || null;
-
-        const isModal = !!(mask || dialog);
-
-        // ---- 5. 输出 ----
-        // console.log(`变化率 ${changed.length}/${k} = ${(ratio * 100).toFixed(1)}%`);
+        for (const [el, hits] of freq.entries()) {
+          if (!el.getBoundingClientRect) continue;
+          const r = el.getBoundingClientRect();
+          if (r.width < 10 || r.height < 10) continue; // 排除极小节点
+      
+          const cover = (r.width * r.height) / (vw * vh);
+          const cls = el.className ? el.className.toString() : '';
+          const tagName = el.tagName.toLowerCase();
+          
+          // 排除明显不是弹窗的全屏根节点
+          if (cover > 0.99 || tagName === 'body' || tagName === 'html') continue;
+      
+          // 获取计算样式（适度牺牲一点点性能换取极度准确）
+          const style = window.getComputedStyle(el);
+          const zIndex = parseInt(style.zIndex) || 0;
+          const position = style.position;
+      
+          // ======== 核心打分逻辑 ========
+          let score = hits; // 基础分：命中的网格点数
+          
+          
+          // 2. 层级与定位特征 (悬浮元素的标配)
+          if (zIndex > 50) score += 300;
+          if (position === 'fixed' || position === 'absolute') score += 200;
+          
+          // 3. 面积特征 (全屏遮罩或大面积弹窗)
+          if (cover > 0.8) score += 100;
+          // 4. 惩罚项：左侧固定导航栏 (贴左边且很高)
+          const cx = r.left + r.width / 2;
+          if (cx < vw * 0.2 && r.height > vh * 0.8) {
+              score -= 1000;
+          }
+      
+      
+          candidates.push({ el, hits, cover, score, cls, r });
+        }
+        // 按得分从高到低排序
+        candidates.sort((a, b) => b.score - a.score);
+        
+        let bestCandidate = candidates[0];
+        let dialog = bestCandidate ? bestCandidate.el : null;
+      
+      
+      
+        const mask = candidates.find(c => c.cover >= 0.9 && c.score > 0)?.el || null;
+        const isModal = !!dialog;
+      
+        // ---- 5. 输出结果 ----
+        console.log(`变化率 ${changed.length}/${k} = ${(ratio * 100).toFixed(1)}%`);
         console.table(candidates.slice(0, 8).map(c => ({
-          el: (c.el.className || c.el.tagName).toString().slice(0, 45),
-          hits: c.n,
+          el: (c.cls || c.el.tagName).toString().slice(0, 40),
+          hits: c.hits,
           cover: +c.cover.toFixed(2),
-          centered: c.centered,
-          interactive: c.interactive,
-          hasText: c.hasText,
+          score: c.score,
         })));
+        
         console.log('mask  :', mask);
         console.log('dialog:', dialog);
         console.log('isModal:', isModal);
@@ -125,8 +147,9 @@ class Tools:
       """
     # 等待整个页面（包括图片、样式表等所有资源）加载完毕
     page.wait_for_load_state(state='load')
-    # print(f"dialog div:{str(page.evaluate(_JS_DIFF, {'G': grid, 'baseVar': var_name}))}")
-    return page.evaluate(_JS_DIFF, {"G": grid, "baseVar": var_name})
+    cssSelector = page.evaluate(_JS_DIFF, {"G": grid, "baseVar": var_name})
+    # print(f"popup_selector1:{cssSelector}")
+    return cssSelector
 
 
 # if __name__ == "__main__":

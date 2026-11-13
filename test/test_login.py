@@ -14,4 +14,5 @@ def test_login_success(page):
 
     browser.click_by_icon("一级目录按钮",f"{config.TEMPLATE_PATH}/一级目录按钮.png")
     browser.click_by_text("智能运维")
+    # browser.page.get_by_text("任务中心", exact=True).click()
     browser.click_by_text("终端管理")

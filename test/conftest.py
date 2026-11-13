@@ -39,8 +39,7 @@ def context(browser, auth_state: str):
     这样既不需要重新请求登录接口，又保证了用例之间互不影响。
     """
     # 加载保存的 auth_state.json 文件，瞬间完成登录注入
-    context = browser.new_context(viewport={"width": 1920, "height": 1080},device_scale_factor=1,storage_state=auth_state)
-
+    context = browser.new_context(viewport={"width": 1440, "height": 900},device_scale_factor=1,storage_state=auth_state)
     # 如果你的系统是纯 Token 机制，且存在 localStorage 中，可以在这里额外注入
     # context.add_init_script("window.localStorage.setItem('token', 'xxxxx')")
 

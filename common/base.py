@@ -48,9 +48,9 @@ class BasePage:
     def _click_by_text(self, text,popup_selector=None, timeout=10, wait_before=0.5):
         """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）,popup_selector为弹窗div属性"""
         # 等待页面稳定，networkidle 要求至少 500 毫秒内没有任何网络连接
-        # self.page.wait_for_load_state('networkidle')
+        self.page.wait_for_load_state('networkidle')
         # 等待整个页面（包括图片、样式表等所有资源）加载完毕
-        self.page.wait_for_load_state(state='load')
+        # self.page.wait_for_load_state(state='load')
         time.sleep(wait_before)
         # 判断有没有弹窗，有就点击弹窗
         # if popup_selector:
@@ -60,13 +60,14 @@ class BasePage:
         #     self._clickCenter(center, text)
         #     print("点击弹窗")
         #需要获取当前url
-        boxes = self._get_ocr_boxes_with_cache(popup_selector=popup_selector, force_refresh=False)
+        boxes = self._get_ocr_boxes_with_cache(popup_selector=popup_selector, force_refresh=True)
 
 
         #在获取的文本内容画提取框，调试获取的文本
         # self.screenshot(boxes,img_bgr,config.SCREENSHOTS_PATH)
-
-        center = self.ocr.find_text_center(boxes, text)
+        image = self.page.screenshot(full_page=False)
+        img = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
+        center = self.ocr.find_text_center(boxes, text,img)
         print(f'识别文本：{text}，坐标：{center}')
         # 点击按钮
         self._clickCenter(center, text)
@@ -112,10 +113,11 @@ class BasePage:
     def _click_by_icon(self,iconName,templatePath=None,popup_selector=None,method=cv2.TM_CCOEFF_NORMED, timeout=10, wait_before=0.5):
         """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）"""
         # 等待页面稳定
-        self.page.wait_for_load_state(state='load')
+        # self.page.wait_for_load_state(state='load')
+        self.page.wait_for_load_state(state='networkidle') #等待网络安静
         time.sleep(wait_before)
 
-        boxes = self._get_icon_boxes_with_cache(popup_selector,iconName,templatePath,method, force_refresh=False)
+        boxes = self._get_icon_boxes_with_cache(popup_selector,iconName,templatePath,method, force_refresh=True)
         center = self.ocr.find_icon_center(boxes, iconName)
         print(f'识别文本：{iconName}，坐标：{center}')
         #点击按钮
@@ -180,18 +182,21 @@ class BasePage:
         if popup_selector:
             popup = self.page.locator(popup_selector)
             # 2. 获取弹窗的边界框 (CSS 像素)
+
             box = popup.bounding_box()
             if not box:
                 raise Exception("无法获取弹窗位置")
             popup_x, popup_y = box["x"], box["y"]
             # 4. 截取弹窗的图
-            screenshot_bytes = popup.screenshot()
+            screenshot_bytes = popup.screenshot(path="perfect_template.png",animations="disabled")
         else:
             screenshot_bytes = self.page.screenshot(full_page=False) # 截全屏
         # 5. 转为 OpenCV 图像
         img = cv2.imdecode(np.frombuffer(screenshot_bytes, np.uint8), cv2.IMREAD_COLOR)
+        # Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).show()
         # 执行 OCR
         raw_result = self.ocr.get_text_boxes(img)  # 返回
+        print(f"raw_result:{raw_result}")
         #核心坐标转换（相对图像像素 -> 绝对视口 CSS 像素）
         for item in raw_result:
             x1, y1, x2, y2 = item["box"]
@@ -206,8 +211,12 @@ class BasePage:
         # # 序列化
         # serialized = self.orc.serialize_ocr_boxes(img)
         # 序列化存入 Redis
-        self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
+        if popup_selector:
+            self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
+        else:
+            self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
         return raw_result
+
 
     def _get_icon_boxes_with_cache(self, popup_selector, iconName, templatePath, method,
                                    force_refresh=False):
@@ -249,11 +258,24 @@ class BasePage:
             popup_x, popup_y = box["x"], box["y"]
             # 4. 截取弹窗的图
             screenshot_bytes = popup.screenshot()
+
         else:
             screenshot_bytes = self.page.screenshot(full_page=False)  # 截全屏
+
+            # locator = self.page.locator("//*[@class='iconify iconify--ep' and @data-icon='ep:grid']")
+            # box = locator.bounding_box()
+            # if box:
+            #     print(f"网页真实逻辑尺寸: w={box['width']}, h={box['height']}")
+            #     print(f"你的模板尺寸: w=26, h=28")
+            #
+            #     # 算出 X 和 Y 轴分别缩放了多少
+            #     scale_x = box['width'] / 26
+            #     scale_y = box['height'] / 28
+            #     print(f"缩放比例: X轴 {scale_x} 倍, Y轴 {scale_y} 倍")
         # 转为 OpenCV 图像
         img = cv2.imdecode(np.frombuffer(screenshot_bytes, np.uint8), cv2.IMREAD_COLOR)
-        templateImg = cv2.imdecode(np.fromfile(templatePath, np.uint8), cv2.IMREAD_COLOR)
+        # Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).show()
+        templateImg = cv2.imdecode(np.fromfile(r"C:\Users\linjin\PycharmProjects\playwrightWithOcr\modelPage\一级目录按钮.png", np.uint8), cv2.IMREAD_COLOR)
         # 执行 cv2识别返回模板坐标
         raw_result = self.ocr.get_icon_boxes(iconName,img,templateImg,method)  # 返回
         print(f"raw_result:{raw_result}")

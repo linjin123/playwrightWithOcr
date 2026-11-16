@@ -22,6 +22,7 @@ class BasePage:
         # self.url = config.URL
         self.cache_ttl = cache_ttl
         self.state = {"container": None}
+        self.baseline = {"containerBefor": None}
 
     def navigate(self,url):
         self.page.goto(url)
@@ -30,26 +31,64 @@ class BasePage:
         self._click_by_text(text)
         self.page.keyboard.insert_text(text)
 
-    def click_by_icon(self, iconName,templatePath):
-        Tools.capture_baseline(self.page)  # 前
-        self._click_by_icon(iconName,templatePath, self.state["container"])
-        self.state["container"] = Tools.diff_with_baseline(self.page)  # 后，结果留给下次
-        print(f'popup_selector:{self.state["container"]}')
-    def click_by_text(self,text):
+    def click_by_icon(self, iconName,templatePath,mark,isPopupAction,force_refresh):
+        url = self.page.url
+        if force_refresh:
+            if isPopupAction:
+                Tools.capture_baseline(self.page)  # 前
+                self._click_by_icon(iconName,templatePath, self.state["container"],mark,url)
+                self.state["container"] = Tools.diff_with_baseline(self.page)  # 后，结果留给下次
+                print(f'popup_selector:{self.state["container"]}')
+            else:
+                self._click_by_icon(iconName, templatePath, self.state["container"],mark,url)
+        elif self._is_cache(url,iconName,mark):
+            self.baseline = Tools.capture_baseline(self.page)
+            self._click_by_cashe(url,iconName,mark)
+            self.state["container"] = None  # 缓存不需要容器，初始化避免非当前容器给到下一次
+            print(f'使用缓存:{iconName}')
+
+        else:
+            if isPopupAction:
+                Tools.capture_baseline(self.page)  # 前
+                self._click_by_icon(iconName,templatePath, self.state["container"],mark,url)
+                self.state["container"] = Tools.diff_with_baseline(self.page)  # 后，结果留给下次
+                print(f'popup_selector:{self.state["container"]}')
+            else:
+                self._click_by_icon(iconName, templatePath, self.state["container"],mark,url)
+    def click_by_text(self,text,mark,isPopupAction,force_refresh):
           # 每次点击后更新，供下一次使用
-
-
-        Tools.capture_baseline(self.page)  # 前
-        self._click_by_text(text, self.state["container"])
-        self.state["container"] = Tools.diff_with_baseline(self.page)  # 后，结果留给下次
-        print(f'popup_selector:{self.state["container"]}')
-        # _click.reset = lambda: state.update(container=None)
+        url = self.page.url
+        if force_refresh:
+            if isPopupAction:
+                Tools.capture_baseline(self.page)  # 前
+                self._click_by_text(text, self.state["container"],mark,url)
+                self.state["container"] = Tools.diff_with_baseline(self.page)  # 后，结果留给下次
+                print(f'popup_selector:{self.state["container"]}')
+            else:
+                self._click_by_text(text, self.state["container"],mark,url)
+        elif self._is_cache(url,text,mark):
+            self.baseline = Tools.capture_baseline(self.page) #如果是弹窗，给下一次点击做基准容器
+            self._click_by_cashe(url,text,mark)
+            self.state["container"] = None  # 缓存不需要容器，初始化避免非当前容器给到下一次
+            print(f'使用缓存:{text}')
+        else:
+            if isPopupAction:
+                Tools.capture_baseline(self.page)  # 前
+                self._click_by_text(text, self.state["container"],mark,url)
+                self.state["container"] = Tools.diff_with_baseline(self.page)  # 后，结果留给下次
+                print(f'popup_selector:{self.state["container"]}')
+            else:
+                self._click_by_text(text, self.state["container"],mark,url)
     def click_by_text_for_scroll(self,text):
           # 每次点击后更新，供下一次使用
+
+
+        self.state["container"] = Tools.diff_with_baseline(self.page) # 上一次后，给当前click使用
+        print(f'popup_selector1:{self.state["container"]}')
         Tools.capture_baseline(self.page)  # 前
         self._click_by_text_for_scroll(text, self.state["container"])
         self.state["container"] = Tools.diff_with_baseline(self.page)  # 后，结果留给下次
-        print(f'popup_selector:{self.state["container"]}')
+        print(f'popup_selector2:{self.state["container"]}')
 
     def _click_by_text_for_scroll(self, text,popup_selector=None, timeout=10, wait_before=0.5):
         """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）,popup_selector为弹窗div属性"""
@@ -74,15 +113,15 @@ class BasePage:
         if popup_selector:
             popup = self.page.locator(popup_selector).locator(f"text={text}")
             popup.scroll_into_view_if_needed()
-            popup.screenshot(path="perfect_template.png", animations="disabled")
+            popup.screenshot(path="perfect_template1.png", animations="disabled")
             popup.click()
         else:
             popup = self.page.locator(f"text={text}")
             popup.scroll_into_view_if_needed()
-            popup.screenshot(path="perfect_template.png", animations="disabled")
+            popup.screenshot(path="perfect_template2.png", animations="disabled")
             popup.click()
 
-    def _click_by_text(self, text,popup_selector=None, timeout=10, wait_before=0.5):
+    def _click_by_text(self, text,popup_selector,mark,url, timeout=10, wait_before=0.5):
         """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）,popup_selector为弹窗div属性"""
         # 等待页面稳定，networkidle 要求至少 500 毫秒内没有任何网络连接
         self.page.wait_for_load_state('networkidle')
@@ -97,7 +136,7 @@ class BasePage:
         #     self._clickCenter(center, text)
         #     print("点击弹窗")
         #需要获取当前url
-        center = self._get_ocr_center_with_cache(text,popup_selector=popup_selector, force_refresh=False)
+        center = self._get_ocr_center_with_cache(text,popup_selector,mark,url)
 
 
         #在获取的文本内容画提取框，调试获取的文本
@@ -109,31 +148,33 @@ class BasePage:
         # 点击按钮
         self._clickCenter(center, text)
 
-    def screenshot(self,boxes,img,output_dir="output"):
+    def screenshot(self,text,center,output_dir="output"):
+        image = self.page.screenshot(path=str(text))
+        img = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             raise FileNotFoundError(f"图片numpy读取失败")
 
-        h, w = img.shape[:2]
+        # h, w = img.shape[:2]
         # annotated = img.copy()
-        for i, item in enumerate(boxes):
-            x1, y1, x2, y2 = item["box"]
-            # 边界保护，防止越界
-            x1 = max(0, min(int(x1), w - 1))
-            y1 = max(0, min(int(y1), h - 1))
-            x2 = max(0, min(int(x2), w))
-            y2 = max(0, min(int(y2), h))
-            if x2 <= x1 or y2 <= y1 or len(item["text"]) >= 10:
-                continue
-
-
-
-            # 1. 在整图上画框
-            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-            # 2. 裁剪并保存
-            # crop = img[y1:y2, x1:x2]
-            text = item["text"].replace("/", "_").replace("\\", "_")
-            cv2.putText(img, text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1)
+        # for i, item in enumerate(boxes):
+        #     x1, y1, x2, y2 = item["box"]
+        #     # 边界保护，防止越界
+        #     x1 = max(0, min(int(x1), w - 1))
+        #     y1 = max(0, min(int(y1), h - 1))
+        #     x2 = max(0, min(int(x2), w))
+        #     y2 = max(0, min(int(y2), h))
+        #     if x2 <= x1 or y2 <= y1 or len(item["text"]) >= 10:
+        #         continue
+        #
+        #
+        #
+        #     # 1. 在整图上画框
+        #     cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        #
+        #     # 2. 裁剪并保存
+        #     # crop = img[y1:y2, x1:x2]
+        #     text = item["text"].replace("/", "_").replace("\\", "_")
+        #     cv2.putText(img, text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1)
             # 文件名去掉非法字符，只保留前 30 字符
             # safe_text = "".join(c for c in text if c.isalnum() or c in "._- ")[:30]
             # crop_name = f"{i:03d}_{text}.png"
@@ -143,18 +184,37 @@ class BasePage:
             # cv2.putText 不支持中文，见文末说明
 
             # 保存带框的整图
-        annotated_path = os.path.join(output_dir, "annotated.png")
-        cv2.imwrite(annotated_path, img)
-        print(f"带框整图已保存: {annotated_path}")
-        print(f"共裁剪 {len(boxes)} 个文本区域到: {output_dir}/")
-    def _click_by_icon(self,iconName,templatePath=None,popup_selector=None,method=cv2.TM_CCOEFF_NORMED, timeout=10, wait_before=0.5):
+        cx, cy = int(center[0]), int(center[1])
+
+        # 画一个红色的十字准星，精确标记点击中心
+        cv2.line(img, (cx - 15, cy), (cx + 15, cy), (0, 0, 255), 2)
+        cv2.line(img, (cx, cy - 15), (cx, cy + 15), (0, 0, 255), 2)
+
+        # 画一个红色的实心小圆点
+        cv2.circle(img, (cx, cy), 4, (0, 0, 255), -1)
+
+        # 在旁边标记 "CLICK"
+        cv2.putText(img, "CLICK", (cx + 20, cy - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = self.screenshot_dir / f"{text}_{timestamp}.png"
+        # annotated_path = os.path.join(output_dir, "annotated.png")
+        cv2.imwrite(filename, img)
+        print(f"带框整图已保存: {filename}")
+        # print(f"共裁剪 {len(boxes)} 个文本区域到: {output_dir}/")
+    def _click_by_cashe(self,url,textName,mark):
+        cashe = self._is_cache(url,textName,mark)
+        center = self._get_center_cache(cashe)
+        self._clickCenter(center, textName)
+        self.screenshot(textName, center, output_dir="output")
+
+    def _click_by_icon(self,iconName,templatePath,popup_selector,mark,url,method=cv2.TM_CCOEFF_NORMED, timeout=10, wait_before=0.5):
         """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）"""
         # 等待页面稳定
         # self.page.wait_for_load_state(state='load')
         self.page.wait_for_load_state(state='networkidle') #等待网络安静
         time.sleep(wait_before)
 
-        center = self._get_icon_center_with_cache(popup_selector,iconName,templatePath,method, force_refresh=False)
+        center = self._get_icon_center_with_cache(popup_selector,iconName,templatePath,mark,url,method)
 
         print(f'识别文本：{iconName}，坐标：{center}')
         #点击按钮
@@ -170,6 +230,7 @@ class BasePage:
 
     def _save_step_screenshot(self, step_name):
         """保存当前页面截图，供报告使用"""
+        self.page.wait_for_load_state('networkidle')
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = self.screenshot_dir / f"{step_name}_{timestamp}.png"
         self.page.screenshot(path=str(filename))
@@ -178,13 +239,13 @@ class BasePage:
     def take_screenshot(self, name="screenshot"):
         return self._save_step_screenshot(name)
 
-    def _get_cache_key(self, url,text,mark=None):
+    def _get_cache_key(self, url,textName,mark):
         """生成缓存的键，可以结合屏幕尺寸等"""
-        raw_string = f"{url}{text}{mark}"
+        raw_string = f"{url}{textName}{mark}"
         # 简单使用 URL 的 MD5 作为键（避免过长）
         return f"{hashlib.md5(raw_string.encode()).hexdigest()}"
 
-    def _get_ocr_center_with_cache(self,text,popup_selector,icon=False, force_refresh=False):
+    def _get_ocr_center_with_cache(self,text,popup_selector,mark,url):
         """
         获取 OCR 结果，优先从 Redis 读取，若不存在则执行 OCR 并缓存。
         """
@@ -192,26 +253,8 @@ class BasePage:
         #     # 如果没有 Redis，直接走 OCR
         #     return self.ocr.get_text_boxes(img)
 
-        url = self.page.url
-        if popup_selector:
-            cache_key = self._get_cache_key(url,text,"popup")
-        else:
-            cache_key = self._get_cache_key(url,text)
 
-
-        if not force_refresh and self.redis:
-            # 尝试从 Redis 获取
-            cached = self.redis.get(cache_key)
-            if cached:
-                try:
-                    data = pickle.loads(cached)
-                    # 将 JSON 转换回 PaddleOCR 期望的格式？取决于后续使用方式。
-                    # 如果后续只需坐标和文本，可以保留为列表字典格式，不转回原始格式。
-                    # 这里假设返回的就是我们序列化后的格式，即 [{'box':..., 'text':..., 'confidence':...}]
-                    return data
-                except Exception as e:
-                    print(f"缓存反序列化失败: {e}")
-
+        cache_key = self._get_cache_key(url,text,mark)
 
         # 3. 初始化截图变量与偏移量
         popup_x, popup_y = 0, 0
@@ -252,90 +295,27 @@ class BasePage:
         center = self.ocr.find_icon_center(raw_result, text)
         self.redis.setex(cache_key, self.cache_ttl, pickle.dumps(center))
         return center
-
-    # def _get_ocr_boxes_with_cache_for_scroll(self,popup_selector,icon=False, force_refresh=False):
-    #     url = self.page.url
-    #     if popup_selector:
-    #         cache_key = popup_selector
-    #     else:
-    #         cache_key = self._get_cache_key(url)
-    #
-    #     if not force_refresh and self.redis:
-    #         # 尝试从 Redis 获取
-    #         cached = self.redis.get(cache_key)
-    #         if cached:
-    #             try:
-    #                 data = json.loads(cached)
-    #                 # 将 JSON 转换回 PaddleOCR 期望的格式？取决于后续使用方式。
-    #                 # 如果后续只需坐标和文本，可以保留为列表字典格式，不转回原始格式。
-    #                 # 这里假设返回的就是我们序列化后的格式，即 [{'box':..., 'text':..., 'confidence':...}]
-    #                 return data
-    #             except Exception as e:
-    #                 print(f"缓存反序列化失败: {e}")
-    #
-    #     # 3. 初始化截图变量与偏移量
-    #     popup_x, popup_y = 0, 0
-    #     dpr = self.page.evaluate("window.devicePixelRatio")  # 处理系统缩放
-    #     # 判断是弹窗还是全屏，并截图
-    #     if popup_selector:
-    #         popup = self.page.locator(popup_selector).locator(f"text={popup_selector}")
-    #         popup.scroll_into_view_if_needed()
-    #         popup.click()
-    #     else:
-    #         popup = self.page.locator(f"text={popup_selector}")
-    #         popup.scroll_into_view_if_needed()
-    #         popup.click()
-    #     # 5. 转为 OpenCV 图像
-    #     img = cv2.imdecode(np.frombuffer(screenshot_bytes, np.uint8), cv2.IMREAD_COLOR)
-    #     # Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).show()
-    #     # 执行 OCR
-    #     raw_result = self.ocr.get_text_boxes(img)  # 返回
-    #     print(f"raw_result:{raw_result}")
-    #     # 核心坐标转换（相对图像像素 -> 绝对视口 CSS 像素）
-    #     for item in raw_result:
-    #         x1, y1, x2, y2 = item["box"]
-    #
-    #         # 除以 DPR 转回 CSS 尺寸，再加上弹窗的偏移量
-    #         item["box"] = (
-    #             popup_x + (x1 / dpr),
-    #             popup_y + (y1 / dpr),
-    #             popup_x + (x2 / dpr),
-    #             popup_y + (y2 / dpr)
-    #         )
-    #     # # 序列化
-    #     # serialized = self.orc.serialize_ocr_boxes(img)
-    #     # 序列化存入 Redis
-    #     if popup_selector:
-    #         self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
-    #     else:
-    #         self.redis.setex(cache_key, self.cache_ttl, json.dumps(raw_result))
-    #     return raw_result
-    def _get_icon_center_with_cache(self, popup_selector, iconName, templatePath, method,
-                                   force_refresh=False):
+    def _is_cache(self,url,textName,mark):
+        cache_key = self._get_cache_key(url, textName, mark)
+        print(f"{textName}cache_key:{cache_key}")
+        return self.redis.get(cache_key)
+    def _get_center_cache(self,cached):
+        try:
+            center = pickle.loads(cached)
+            # 将 JSON 转换回 PaddleOCR 期望的格式？取决于后续使用方式。
+            # 如果后续只需坐标和文本，可以保留为列表字典格式，不转回原始格式。
+            # 这里假设返回的就是我们序列化后的格式，即 [{'box':..., 'text':..., 'confidence':...}]
+            return center
+        except Exception as e:
+            print(f"缓存反序列化失败: {e}")
+    def _get_icon_center_with_cache(self,popup_selector, iconName, templatePath,mark,url, method):
         """
         获取 OCR 结果，优先从 Redis 读取，若不存在则执行 OCR 并缓存。缓存按键的唯一坐标
         """
         # if self.redis is None:
         #     # 如果没有 Redis，直接走 OCR
         #     return self.ocr.get_text_boxes(img)
-        url = self.page.url
-        if popup_selector:
-            cache_key = self._get_cache_key(url,iconName,"popup")
-        else:
-            cache_key = self._get_cache_key(url,iconName,"icon")
-        if not force_refresh and self.redis:
-            # 尝试从 Redis 获取
-            cached = self.redis.get(cache_key)
-            if cached:
-                try:
-                    data = pickle.loads(cached)
-                    # 将 JSON 转换回 PaddleOCR 期望的格式？取决于后续使用方式。
-                    # 如果后续只需坐标和文本，可以保留为列表字典格式，不转回原始格式。
-                    # 这里假设返回的就是我们序列化后的格式，即 [{'box':..., 'text':..., 'confidence':...}]
-                    return data
-                except Exception as e:
-                    print(f"缓存反序列化失败: {e}")
-
+        cache_key = self._get_cache_key(url, iconName, mark)
         # 3. 初始化截图变量与偏移量
         popup_x, popup_y = 0, 0
         dpr = self.page.evaluate("window.devicePixelRatio")  # 处理系统缩放
@@ -387,6 +367,7 @@ class BasePage:
         # serialized = self.orc.serialize_ocr_boxes(img)
         # 序列化存入 Redis
         center = self.ocr.find_icon_center(raw_result, iconName)
+
         self.redis.setex(cache_key, self.cache_ttl, pickle.dumps(center))
         return center
 
@@ -449,13 +430,13 @@ class BasePage:
 
         return results
 
-    def _clickCenter(self,center,text):
+    def _clickCenter(self,center,textName):
         if center:
             x, y = center
             # 点击坐标（注意视口偏移）
             self.page.mouse.click(x, y)
-            self._save_step_screenshot(f"click_{text}")
+            self._save_step_screenshot(f"click_{textName}")
             return True
         else:
-            self._save_step_screenshot(f"click_{text}")
-            raise Exception(f"未通过 OCR 找到icon: {text}")
+            self._save_step_screenshot(f"click_{textName}")
+            raise Exception(f"未通过 OCR 找到icon: {textName}")

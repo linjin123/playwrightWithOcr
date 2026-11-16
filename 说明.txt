@@ -1,2 +1,5 @@
 运行
 python -m pytest test/test_login.py -v
+
+-force_refresh为强制刷新
+-每个点击行为都分为两部分，点击和点击后。点击分为弹窗按钮popup、图标按钮icon、文本按钮text，点击后分为触发弹窗isPopup、不触发弹窗

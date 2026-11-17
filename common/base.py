@@ -41,6 +41,7 @@ class BasePage:
                 print(f'popup_selector:{self.state["container"]}')
             else:
                 self._click_by_icon(iconName, templatePath, self.state["container"],mark,url)
+                self.state["container"] = None  # 缓存不需要容器，初始化避免非当前容器给到下一次
         elif self._is_cache(url,iconName,mark):
             self.baseline = Tools.capture_baseline(self.page)
             self._click_by_cashe(url,iconName,mark)
@@ -55,6 +56,7 @@ class BasePage:
                 print(f'popup_selector:{self.state["container"]}')
             else:
                 self._click_by_icon(iconName, templatePath, self.state["container"],mark,url)
+                self.state["container"] = None  # 缓存不需要容器，初始化避免非当前容器给到下一次
     def click_by_text(self,text,mark,isPopupAction,force_refresh):
           # 每次点击后更新，供下一次使用
         url = self.page.url
@@ -66,6 +68,7 @@ class BasePage:
                 print(f'popup_selector:{self.state["container"]}')
             else:
                 self._click_by_text(text, self.state["container"],mark,url)
+                self.state["container"] = None  # 缓存不需要容器，初始化避免非当前容器给到下一次
         elif self._is_cache(url,text,mark):
             self.baseline = Tools.capture_baseline(self.page) #如果是弹窗，给下一次点击做基准容器
             self._click_by_cashe(url,text,mark)
@@ -79,6 +82,7 @@ class BasePage:
                 print(f'popup_selector:{self.state["container"]}')
             else:
                 self._click_by_text(text, self.state["container"],mark,url)
+                self.state["container"] = None  # 缓存不需要容器，初始化避免非当前容器给到下一次
     def click_by_text_for_scroll(self,text):
           # 每次点击后更新，供下一次使用
 
@@ -205,7 +209,7 @@ class BasePage:
         cashe = self._is_cache(url,textName,mark)
         center = self._get_center_cache(cashe)
         self._clickCenter(center, textName)
-        self.screenshot(textName, center, output_dir="output")
+        # self.screenshot(textName, center, output_dir="output")
 
     def _click_by_icon(self,iconName,templatePath,popup_selector,mark,url,method=cv2.TM_CCOEFF_NORMED, timeout=10, wait_before=0.5):
         """使用 OCR 点击包含特定文本的元素（无文本图标亦可通过图标特征文字辅助）"""
@@ -440,3 +444,11 @@ class BasePage:
         else:
             self._save_step_screenshot(f"click_{textName}")
             raise Exception(f"未通过 OCR 找到icon: {textName}")
+
+    def exactExpect(self,assertMessage):
+        Tools.exactExpect(self.page,assertMessage)
+
+    def input(self,text,mark,inputMessage,isPopupAction,force_refresh):
+        self.click_by_text(text,mark,isPopupAction,force_refresh)
+        self.page.keyboard.type(inputMessage)
+

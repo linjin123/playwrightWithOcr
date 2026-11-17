@@ -1,5 +1,6 @@
 #已调试完，可以基本完美适配识别弹窗
 from typing import Any, Dict, List, Optional
+from playwright.sync_api import expect
 from playwright.sync_api import Page, sync_playwright
 
 class Tools:
@@ -151,7 +152,21 @@ class Tools:
     # print(f"popup_selector1:{cssSelector}")
     return cssSelector
 
+  def exactExpect(page: Page,assertMessage):
+    # 锁定包含目标文本的行const
+    targetRowCount = page.get_by_role('row').filter(has_text=assertMessage).count()
+    if targetRowCount == 0:
+      raise AssertionError(f"断言失败：查询结果中未找到包含 '{assertMessage}' 的行。")
+    elif targetRowCount > 1:
+      raise AssertionError(f"断言失败：查询结果不唯一！包含 '{assertMessage}' 的行有 {targetRowCount} 条。")
 
+  def fuzzyExpect(page: Page,assertMessage):
+    # 锁定包含目标文本的行const
+    targetRowCount = page.get_by_role('row').filter(has_text=assertMessage).count()
+    if targetRowCount == 0:
+      raise AssertionError(f"断言失败：查询结果中未找到包含 '{assertMessage}' 的行。")
+    elif targetRowCount == 1:
+      raise AssertionError(f"断言失败：查询结果没有多行！包含 '{assertMessage}' 的行有 {targetRowCount} 条。")
 # if __name__ == "__main__":
 #   with sync_playwright() as p:
 #     browser = p.chromium.launch(headless=False)
